@@ -1,48 +1,89 @@
-# Leduc Poker — CFR vs Deep Self-Play
+# Leduc Poker: CFR vs Deep Self-Play
 
-Bachelor-thesis codebase (Bocconi BAI). The single Jupyter notebook
-`leduc.ipynb` is the source of every number, curve, and table the
-written thesis reports. The full specification lives in `[PLAN.md](PLAN.md)` — read
-it before changing anything.
+Bachelor-thesis codebase (Bocconi, BAI: Maths and CS for AI). A single Jupyter notebook,
+`leduc.ipynb`, is the source of every number, curve, and table the written thesis reports.
 
-**Thesis:** *Approximating Nash Equilibria in Imperfect-Information Games: A
-Comparison of CFR and Deep Self-Play on Leduc Poker.*
+**Thesis:** *Approximating Nash Equilibria in Imperfect-Information Games: A Comparison of CFR
+and Deep Self-Play on Leduc Poker.*
 
-## Current status
+**Goal.** On 2-player Leduc Hold'em, empirically compare game-theoretic regret-minimization
+methods (the CFR family) against deep self-play reinforcement learning, using **exploitability
+/ NashConv** (the exact distance to a Nash equilibrium) as the single principled yardstick.
 
-First checkpoint (`PLAN.md` §11): sections **§0 Setup**, **§1 Game & ruler**, and
-**§2 CFR / CFR+ baseline** are implemented and verified. On 2 000 CFR iterations
-the average policy reaches:
+The game is OpenSpiel's standard Leduc Hold'em: a 6-card deck (J, Q, K in two suits), ante 1,
+fixed-limit bets of 2 (round 1) and 4 (round 2), and a two-raise cap per round, so a hand is
+worth at most 13 chips. It has only **936 information sets**, small enough that exploitability is
+computed *exactly* over the full game tree, which is precisely why it is the standard benchmark.
 
+## Results at a glance
 
-| method | final exploitability (chips / hand) |
-| ------ | ----------------------------------- |
-| CFR    | ≈ 7 × 10⁻³                          |
-| CFR+   | ≈ 9 × 10⁻⁵                          |
+Final exploitability of each method's evaluated policy on 2-player Leduc (chips per hand; lower
+is closer to a Nash equilibrium):
 
+| Method | Paradigm | Exploitability | Behaviour |
+| ------ | -------- | -------------- | --------- |
+| **CFR+** | regret minimization (tabular) | 8.5e-5 | reference equilibrium |
+| **CFR** | regret minimization (tabular) | 7e-3 | reference |
+| **Deep CFR** | regret minimization (neural) | 0.26 | best neural method |
+| **NFSP** | deep self-play (fictitious play) | 0.75 | slow but reproducible descent |
+| **RMPG** | deep self-play (regret policy gradient) | 1.1 | noisy, oscillates |
+| **PPO** | deep RL (no equilibrium machinery) | 1.2 | negative baseline, never converges |
 
-CFR+ beats CFR by roughly two orders of magnitude — the expected qualitative
-result. The trained average policies are saved under `data/checkpoints/` and are
-the reference equilibrium for evaluating every deep method added in §3 – §10.
+The ordering the notebook establishes is clear: the CFR family reaches equilibrium, deep
+self-play approaches it slowly, and PPO does not converge at all. The gap widens in 3-player
+Leduc (where deep self-play stops converging), and reproducibility cleanly separates the
+methods. PPO's failure to converge is an intended scientific result, not a bug.
+
+## Contents
+
+The notebook runs top-to-bottom and is organized into self-contained, re-runnable sections. Each
+algorithm section has a markdown intro (with the theory of the loss or gradient it minimizes), a
+training function, a run cell, a saved CSV, an inline plot, a saved checkpoint, and a save/reload
+round-trip check.
+
+- **§0 Setup.** Imports, device detection, global seeds, and one `CONFIG` dataclass holding every
+  hyperparameter, budget, eval cadence, seed list, and output path (experiments scale up or down in
+  one line). §0.1 records the installed OpenSpiel API signatures.
+- **§1 The game and the ruler.** Load `leduc_poker`; print game facts (936 info sets, tensor size
+  30, 3 actions); define and sanity-check exploitability / NashConv on the uniform-random policy.
+- **§2 CFR / CFR+ baseline.** Train both tabular solvers; plot exploitability of the **average**
+  policy; save the average policies (the reference equilibrium for everything downstream).
+- **§3 Deep CFR.** Neural CFR (advantage and strategy networks); plot exploitability; save weights.
+- **§4 NFSP.** Neural fictitious self-play; evaluate and plot the **average** policy; save weights.
+- **§5 Policy-gradient self-play (RMPG).** Regret-matching policy gradient on the *current* policy;
+  plot; save weights.
+- **§6 PPO self-play.** Single-agent PPO wrapped into a 2-player self-play loop, the **negative
+  baseline**; plot (expect oscillation); save weights.
+- **§7 Head-to-head evaluation.** Exact, seat-averaged all-vs-all matrix of every learned policy
+  plus the CFR+ equilibrium; results table (chips per hand and mbb/g) and heatmap.
+- **§8 3-player Leduc.** Repeat CFR and the deep self-play methods on 3-player Leduc, measured by
+  NashConv; the key qualitative finding (deep self-play plateaus far above CFR).
+- **§9 Robustness and sensitivity.** Multi-seed (5-seed) mean and std bands for every deep method,
+  plus a small hyperparameter sweep over NFSP's anticipatory parameter η.
+- **§9.4 Mean reward vs fixed CFR opponents.** Srinivasan-style benchmark: track each method's exact
+  reward against frozen CFR opponents (100/500/1000/2000 iterations) over training.
+- **§10 Aggregate and export.** Combined exploitability-vs-progress overlay of all methods and a
+  deliverables manifest (vector PDF per figure, CSV per result).
 
 ## Repository layout
 
 ```
-PLAN.md                       — single source of truth for the thesis experiment
-leduc_nash_comparison.ipynb   — the deliverable notebook (run top-to-bottom)
-requirements.txt              — pinned Python deps
-scripts/build_notebook.py     — regenerates the .ipynb from Python source
-                                (the only sane way to diff a notebook in git)
+leduc.ipynb               the deliverable notebook (run top-to-bottom)
+requirements.txt          pinned Python dependencies
+README.md                 this file
+PLAN.md                   project specification
 data/
-  checkpoints/                — saved tabular CFR strategies + NN weights
-  results/                    — per-run CSVs backing every figure
-  figures/                    — final PDF (vector, for LaTeX) + PNG previews
+  checkpoints/            saved tabular CFR strategies (.pkl) and neural agent weights (.pt)
+  results/                per-run CSVs backing every figure
+  figures/                final PDF (vector, for LaTeX) and PNG previews
 ```
+
+The notebook is edited directly (there is no build step); `data/` is regenerated by running it.
 
 ## Install
 
-OpenSpiel 1.6.x ships wheels for Python **3.11 – 3.13** only; 3.14 is not yet
-supported. The notebook is tested against Python 3.13 on Apple Silicon (MPS).
+OpenSpiel 1.6.x ships wheels for Python 3.11 to 3.13 only (3.14 is not yet supported). The
+notebook is developed and tested against Python 3.13 on Apple Silicon.
 
 ```bash
 # 1. Create the venv with a supported interpreter.
@@ -53,77 +94,76 @@ python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+Core dependencies: `open_spiel==1.6.15` (game, reference algorithms, and exact exploitability),
+`torch` (the deep methods), and the usual notebook and plotting stack (`jupyterlab`, `numpy`,
+`pandas`, `matplotlib`, `tqdm`). `dm-tree` is included because it is an undeclared transitive
+dependency of OpenSpiel's PyTorch agents.
+
 ## Run
-
-### From the command line (headless re-execution)
-
-Runs every cell top-to-bottom and writes outputs back into the notebook:
-
-```bash
-.venv/bin/jupyter nbconvert --to notebook --execute --inplace \
-  leduc_nash_comparison.ipynb --ExecutePreprocessor.timeout=900
-```
-
-§0 – §2 takes ≈ 3 minutes on an Apple M-series CPU (CFR is pure-Python tabular;
-the GPU is unused at this stage).
 
 ### Interactively (JupyterLab)
 
 ```bash
-.venv/bin/jupyter lab leduc_nash_comparison.ipynb
+.venv/bin/jupyter lab leduc.ipynb
 ```
 
-Selecting the venv kernel is automatic if you launch `jupyter` from inside
-`.venv`. Otherwise register it once:
+If the venv kernel is not selected automatically, register it once:
 
 ```bash
 .venv/bin/python -m ipykernel install --user --name leduc-venv \
   --display-name "Python 3 (Leduc venv)"
 ```
 
-## Device selection
+### Headless re-execution
 
-The notebook auto-picks the best available PyTorch backend in this order:
-
-1. **MPS** — Apple Silicon (M-series), used here on M5.
-2. **CUDA** — NVIDIA GPU if present.
-3. **CPU** — fallback. Leduc is tiny enough that CPU is fully sufficient even
-  for the deep agents; MPS is a convenience, not a requirement.
-
-The chosen device is printed at the top of §0 and stored in `CONFIG.device`.
-
-## Editing the notebook
-
-Jupyter notebooks diff badly in git. The notebook is therefore generated from
-`scripts/build_notebook.py` — edit the Python source and regenerate:
+Runs every cell top-to-bottom and writes outputs back into the notebook:
 
 ```bash
-.venv/bin/python scripts/build_notebook.py
+.venv/bin/jupyter nbconvert --to notebook --execute --inplace \
+  leduc.ipynb --ExecutePreprocessor.timeout=7200
 ```
 
-If you change cells directly in JupyterLab while iterating, that is fine — just
-fold the change back into `scripts/build_notebook.py` before committing so the
-two stay in sync.
+A full run takes roughly 30 to 60 minutes on a modern CPU, dominated by NFSP's 1M-episode
+training and the 3-player NashConv evaluations (about 25 s each, because the 3-player game has
+about 25,800 information sets). All budgets are one-line adjustable in the `CONFIG` cell: shrink
+them for a fast smoke test, enlarge them to tighten convergence.
+
+## Device
+
+§0 auto-detects the best available PyTorch backend (MPS on Apple Silicon, then CUDA, then CPU)
+and prints it. The deep agents nonetheless run on CPU: Leduc's networks and batches are tiny, so
+device-transfer overhead makes CPU faster than MPS or CUDA here. GPU support is a convenience for
+future scaling, not a requirement; everything in the notebook is comfortably CPU-bound.
 
 ## Reproducibility
 
-- Global seeds (`random`, `numpy`, `torch`, `torch.mps`) are set from
-`CONFIG.seeds[0]` at the start of §0; deep-method seeds will sweep
-`CONFIG.seeds = (0, 1, 2, 3, 4)` as required by `PLAN.md` §7.
+- Global seeds (`random`, `numpy`, `torch`, `torch.mps`) are set from `CONFIG.seeds[0]` at the
+  start of §0; the deep methods sweep `CONFIG.seeds = (0, 1, 2, 3, 4)` for the §9 robustness bands.
 - Every per-run log is written to `data/results/*.csv` with the schema
-`[method, seed, iteration, episodes, wall_clock_s, exploitability]`. Figures
-read from those CSVs, so plots can be regenerated without retraining.
-- The §2 cells include a save/reload round-trip that verifies the on-disk
-average policy reproduces the in-memory exploitability bit-for-bit.
+  `[method, seed, iteration, episodes, wall_clock_s, exploitability]` (3-player uses `nash_conv`
+  and `progress`; the head-to-head and mean-reward analyses add their own columns). **All figures
+  read from these CSVs**, so any plot can be regenerated without retraining.
+- Each algorithm section includes a save/reload round-trip that verifies the on-disk policy
+  reproduces the in-memory exploitability exactly, so checkpoints can be reloaded and played
+  head-to-head without retraining.
 
-## Contents
+## Outputs
 
-- **§3** Deep CFR (`open_spiel.python.pytorch.deep_cfr`)
-- **§4** NFSP (`open_spiel.python.pytorch.nfsp`)
-- **§5** Policy-gradient self-play — RMPG (`open_spiel.python.pytorch.policy_gradient`)
-- **§6** PPO self-play wrapper — *negative baseline* (`open_spiel.python.pytorch.ppo` + custom self-play loop, see `PLAN.md` §5.5)
-- **§7** Head-to-head matrix vs the §2 CFR+ equilibrium
-- **§8** 3-player Leduc extension
-- **§9** Multi-seed robustness band + small hyperparameter sweep
-- **§10** Aggregate exploitability-vs-iter / exploitability-vs-wall-clock plots + PDF / CSV exports
+Running the notebook produces, under `data/`:
 
+- **Checkpoints.** `cfr_avg_policy.pkl`, `cfr_plus_avg_policy.pkl`, and `deep_cfr.pt`, `nfsp.pt`,
+  `rmpg.pt`, `ppo.pt`.
+- **Results.** One CSV per curve and table (`cfr_baseline`, `deep_cfr`, `nfsp`, `rmpg`, `ppo`,
+  `head_to_head_chips`, `head_to_head_mbbg`, `three_player_nashconv`, `robustness_multiseed`,
+  `robustness_nfsp_eta_sweep`, `mean_reward_vs_cfr`, and so on).
+- **Figures.** Every plot as both a vector PDF (for LaTeX) and a PNG preview, with consistent
+  styling: linear axes (except the CFR baseline, which is log-log), a dashed CFR+ floor reference
+  line, and minimalist titles.
+
+### Supplementary interpretability analyses
+
+Alongside the core sections, the project includes three figures that read what the trained
+policies actually learned (each method's bluffing, value-betting, and folding tendencies against
+the CFR+ equilibrium) and test whether a hyperparameter steers a method's learned style:
+`strategy_fingerprint`, `rmpg_entropy_experiment`, and `nfsp_eta_behaviour`, each with a matching
+CSV in `data/results/`.
